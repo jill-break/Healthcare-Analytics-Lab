@@ -1,0 +1,87 @@
+ETL Design Document
+Project: Healthcare Analytics - OLTP to Star Schema Migration
+Source Database: oltp_healthtech (3NF)
+Target Database: olap_healthtech (Star Schema)
+Strategy: Staged ELT (Extract, Load, Transform)
+
+1. HIGH-LEVEL STRATEGY
+The migration follows a "Staged Loading" approach to handle performance bottlenecks found during the initial 100k row test. 
+Instead of a single monolithic query (which timed out), we split the process into:
+1.  Dimension Load: Direct inserts with row-level transformations.
+2.  Fact Load (Stage A): Pre-calculate expensive counts into temporary tables.
+3.  Fact Load (Stage B): Bulk insert base data (fast).
+4.  Fact Load (Stage C): Update complex logic (Readmission) in a second pass.
+
+2. DIMENSION LOGIC (Pseudocode)
+For each dimension, we extract from Source and Load to Target with necessary transformations.
+
+DIM_PATIENT:
+    SELECT patient_id, dob, gender FROM source.patients
+    CALCULATE current_age = DATEDIFF(year, dob, today)
+    DERIVE age_group:
+        IF age < 18 THEN '0-18'
+        ELSE IF age BETWEEN 18 AND 65 THEN '19-65'
+        ELSE '65+'
+    INSERT INTO target.dim_patient
+
+DIM_DATE:
+    SELECT DISTINCT encounter_date FROM source.encounters
+    DERIVE Attributes: Year, Quarter, Month, DayName
+    DERIVE is_weekend = CASE WHEN DayName IN ('Saturday', 'Sunday') THEN 1 ELSE 0
+    INSERT INTO target.dim_date
+
+DIM_SPECIALTY, DIM_DEPARTMENT, DIM_PROVIDER:
+    Direct 1:1 mapping from source tables.
+
+3. FACT TABLE LOGIC (The "Staged" Optimization)
+The Fact table failed to load when using subqueries for counts and readmissions simultaneously. 
+We fixed this using the following 3-Stage Logic:
+
+STAGE A: Pre-Aggregation (Helper Tables)
+    -- Problem: Running `COUNT(*)` for every encounter inside the main INSERT caused timeouts.
+    -- Solution: Calculate counts once and store in memory.
+    CREATE TEMPORARY TABLE temp_diag_counts AS 
+        SELECT encounter_id, COUNT(*) FROM encounter_diagnoses GROUP BY encounter_id
+    
+    CREATE TEMPORARY TABLE temp_proc_counts AS 
+        SELECT encounter_id, COUNT(*) FROM encounter_procedures GROUP BY encounter_id
+
+STAGE B: Bulk Insert (Lightweight)
+    -- Action: Insert the 10,000 rows without the heavy Readmission logic.
+    INSERT INTO fact_encounters (keys, metrics, is_readmission)
+    SELECT 
+        s.encounter_id,
+        dim_keys (patient_key, provider_key...),
+        coalesce(temp_diag_counts.cnt, 0), -- Join to helper table
+        coalesce(temp_proc_counts.cnt, 0), -- Join to helper table
+        0 -- DEFAULT TO 0 (Placeholder to speed up insert)
+    FROM source.encounters s
+    LEFT JOIN temp_tables
+    LIMIT 10000
+
+STAGE C: The "Readmission" Update
+    -- Problem: Checking 30-day history for every patient is computationally expensive (Self-Join).
+    -- Solution: Run it as a targeted UPDATE after data is loaded.
+    DISABLE SQL_SAFE_UPDATES
+    UPDATE fact_encounters f
+    SET is_readmission = 1
+    WHERE EXISTS (
+        SELECT 1 FROM source.encounters history
+        WHERE history.patient_id = f.patient_id
+        AND history.date BETWEEN (f.date - 30 days) AND f.date
+        AND history.type = 'Inpatient'
+    )
+    ENABLE SQL_SAFE_UPDATES
+
+4. BRIDGE TABLE LOGIC
+We populate bridge tables only for the encounters that successfully made it into the Fact table (handling the 10k limit).
+
+BRIDGE_DIAGNOSES:
+    JOIN source.encounter_diagnoses 
+    WITH target.fact_encounters (on encounter_id)
+    INSERT resulting (encounter_key, diagnosis_key) pairs.
+
+BRIDGE_PROCEDURES:
+    JOIN source.encounter_procedures
+    WITH target.fact_encounters (on encounter_id)
+    INSERT resulting (encounter_key, procedure_key) pairs.

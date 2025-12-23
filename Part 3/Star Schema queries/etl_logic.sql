@@ -1,8 +1,6 @@
--- =======================================================
 -- ETL SCRIPT: OLTP (Source) -> OLAP (Target)
 -- Source DB: oltp_healthtech
 -- Target DB: olap_healthtech
--- =======================================================
 
 -- 0. HELPER: Create Index on Source for Speed
 -- If this fails with "Duplicate Key", just ignore it and continue.
@@ -11,7 +9,6 @@ CREATE INDEX idx_etl_speed
 ON oltp_healthtech.encounters(patient_id, encounter_date, encounter_type);
 
 -- 1. LOAD DIMENSIONS (Directly from OLTP)
--- -------------------------------------------------------
 
 INSERT INTO olap_healthtech.dim_specialty (specialty_id, specialty_name, specialty_code)
 SELECT specialty_id, specialty_name, specialty_code 
@@ -64,7 +61,6 @@ SELECT DISTINCT
 FROM oltp_healthtech.encounters;
 
 -- 2. STAGED LOAD FOR FACT TABLE
--- -------------------------------------------------------
 
 -- Stage A: Create Temporary Helper Tables for Counts
 DROP TEMPORARY TABLE IF EXISTS temp_diag_counts;
@@ -129,7 +125,6 @@ LEFT JOIN temp_proc_counts tp ON e.encounter_id = tp.encounter_id
 LIMIT 10000;
 
 -- Stage C: Update Readmission Logic
--- -------------------------------------------------------
 
 -- 1. Disable Safe Update Mode temporarily
 SET SQL_SAFE_UPDATES = 0;
@@ -151,7 +146,6 @@ SET SQL_SAFE_UPDATES = 1;
 
 
 -- 3. LOAD BRIDGE TABLES
--- -------------------------------------------------------
 
 INSERT INTO olap_healthtech.bridge_encounter_diagnoses (encounter_key, diagnosis_key, diagnosis_sequence)
 SELECT f.encounter_key, d.diagnosis_key, ed.diagnosis_sequence

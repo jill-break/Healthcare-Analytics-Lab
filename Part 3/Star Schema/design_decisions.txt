@@ -3,20 +3,22 @@ Project: Healthcare Analytics - OLTP to Star Schema Migration
 Target Database: olap_healthtech
 Author: Junior Data Engineer
 
---------------------------------------------------------------------------------
+
 DECISION 1: FACT TABLE GRAIN
---------------------------------------------------------------------------------
+
 Selected Option: Option A: One row per encounter.
 
 Justification:
 The primary business process being analyzed is the "Patient Encounter" (a single hospital visit).
 1. Metric Accuracy: Revenue (claim_amount) and time (duration) are attributes of the visit itself.
-2. Avoiding Duplication: Choosing "Diagnosis" as the grain (Option B) would cause the 'claim_amount' to repeat for every diagnosis in a single visit, leading to massive revenue over-reporting (Fan Trap).
-3. Query Alignment: 3 out of the 4 business questions focus on encounter counts or revenue totals, which aligns perfectly with the encounter grain.
+2. Avoiding Duplication: Choosing "Diagnosis" as the grain (Option B) would cause the 'claim_amount' 
+to repeat for every diagnosis in a single visit, leading to massive revenue over-reporting (Fan Trap).
+3. Query Alignment: 3 out of the 4 business questions focus on encounter counts or revenue totals, 
+which aligns perfectly with the encounter grain.
 
---------------------------------------------------------------------------------
+
 DECISION 2: DIMENSION TABLES
---------------------------------------------------------------------------------
+
 We will create 8 dimension tables in the 'olap_healthtech' database to support filtering and grouping:
 
 1. dim_date
@@ -25,7 +27,8 @@ We will create 8 dimension tables in the 'olap_healthtech' database to support f
 
 2. dim_patient
    - Attributes: patient_key (PK), patient_id, current_age, age_group ('0-18', '19-65', '65+').
-   - Purpose: Demographics analysis. We calculate 'age_group' during ETL to avoid runtime case statements.
+   - Purpose: Demographics analysis. We calculate 'age_group' during ETL to avoid runtime case 
+   statements.
 
 3. dim_provider
    - Attributes: provider_key (PK), provider_id, full_name, credential.
@@ -49,14 +52,17 @@ We will create 8 dimension tables in the 'olap_healthtech' database to support f
 8. dim_procedures (used via Bridge)
    - Attributes: procedure_key (PK), cpt_code, description.
 
---------------------------------------------------------------------------------
+
 DECISION 3: PRE-AGGREGATED METRICS
---------------------------------------------------------------------------------
-The 'fact_encounters' table will store specific metrics calculated during the ETL process to eliminate expensive runtime joins:
+
+The 'fact_encounters' table will store specific metrics calculated during the ETL 
+process to eliminate expensive runtime joins:
 
 1. is_readmission (BIT/BOOLEAN)
-   - Logic: A complex look-back is performed during ETL to check if an inpatient visit occurred within 30 days of a previous discharge.
-   - Benefit: This transforms Question 3 from a slow Self-Join (~2.0s) into a simple WHERE clause (instant).
+   - Logic: A complex look-back is performed during ETL to check if an inpatient visit 
+   occurred within 30 days of a previous discharge.
+   - Benefit: This transforms Question 3 from a slow Self-Join (~2.0s) into a simple 
+   WHERE clause (instant).
 
 2. diagnosis_count & procedure_count (INT)
    - Logic: Pre-counting the number of items in the source junction tables.
@@ -64,11 +70,12 @@ The 'fact_encounters' table will store specific metrics calculated during the ET
 
 3. total_allowed_amount (DECIMAL)
    - Logic: Denormalized from the 'billing' table.
-   - Benefit: Completely eliminates the need to join the 'billing' table for revenue queries (Question 4), reducing join complexity.
+   - Benefit: Completely eliminates the need to join the 'billing' table for 
+   revenue queries (Question 4), reducing join complexity.
 
---------------------------------------------------------------------------------
+
 DECISION 4: BRIDGE TABLES
---------------------------------------------------------------------------------
+
 Will we use bridge tables? YES.
 
 Justification:
@@ -80,4 +87,5 @@ We implemented two bridge tables in 'olap_healthtech':
 1. bridge_encounter_diagnoses
 2. bridge_encounter_procedures
 
-This allows us to handle the "Top Diagnosis-Procedure Pairs" query (Question 2) accurately without polluting the main Fact table grain.
+This allows us to handle the "Top Diagnosis-Procedure Pairs" query (Question 2) 
+accurately without polluting the main Fact table grain.
