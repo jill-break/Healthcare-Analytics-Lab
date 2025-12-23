@@ -1,0 +1,82 @@
+Design Decisions Document
+Project: Healthcare Analytics - OLTP to Star Schema Migration
+Author: Junior Data Engineer
+
+DECISION 1: FACT TABLE GRAIN
+
+Selected Option: Option A: One row per encounter.
+
+Justification:
+The primary business process being analyzed is the "Patient Encounter" (a visit).
+1. Metric Accuracy: Revenue (claim_amount) and time (duration) are attributes of the visit itself, not the diagnosis.
+2. Avoiding Duplication: If we chose Option B (Grain = Diagnosis), a single encounter with 3 diagnoses would result in 3 rows in the fact table. Summing the 'claim_amount' column would then result in 3x the actual revenue (Fan trap).
+3. Query Alignment: 3 out of the 4 business questions focus on encounter counts or revenue totals, which aligns perfectly with the encounter grain.
+
+DECISION 2: DIMENSION TABLES
+
+We will create 6 dimension tables to support "slicing and dicing" the data.
+
+1. dim_date
+   - Attributes: date_key (PK), full_date, year, quarter, month, month_name, day_of_week, is_weekend.
+   - Purpose: distinct filtering for monthly reporting (Question 1 & 4).
+
+2. dim_patient
+   - Attributes: patient_key (PK), patient_id (Natural Key), full_name, gender, date_of_birth, current_age, age_group (e.g., '0-18', '19-65', '65+').
+   - Purpose: analyzing demographics and identifying unique patients.
+
+3. dim_provider
+   - Attributes: provider_key (PK), provider_id (Natural Key), full_name, credential (MD, DO), npi.
+   - Purpose: tracking performance by doctor.
+
+4. dim_specialty
+   - Attributes: specialty_key (PK), specialty_id (Natural Key), specialty_name, specialty_code.
+   - Purpose: Primary grouping for Question 1, 3, and 4. (Note: In the OLTP schema, this was normalized behind Providers. In Star Schema, we link it directly to the Fact or denormalize it into Dim_Provider. Here, we will keep it as a dimension or denormalize into Provider depending on if providers change specialties. Assuming fixed specialties, we can denote it in dim_provider, but for clarity/shared use, a separate dimension or snowflake is acceptable. *Decision: Denormalize Specialty into dim_provider for stricter Star Schema, or keep separate if reuse is needed. For this design, we will Denormalize Specialty Name directly into dim_provider to reduce joins.*)
+   *REVISION: To strictly follow the prompts request for a "Specialty Dimension", we will keep dim_specialty separate or snowflake it. However, best practice is to include specialty_name inside dim_provider. I will create a specific dim_specialty to satisfy the prompt's explicit list.*
+
+5. dim_department
+   - Attributes: department_key (PK), department_id, department_name, floor, capacity.
+   - Purpose: Physical location analysis.
+
+6. dim_encounter_type
+   - Attributes: encounter_type_key (PK), encounter_type_name (Inpatient, Outpatient, ER), type_description.
+   - Purpose: Filtering for Readmission rates (Inpatient only).
+
+DECISION 3: PRE-AGGREGATED METRICS
+
+The fact_encounters table will store specific metrics to eliminate runtime calculations:
+
+1. is_readmission (BIT/BOOLEAN)
+   - Logic: During ETL, look up previous encounters for the patient. If this encounter is within 30 days of a previous discharge, set to 1.
+   - Benefit: Completely eliminates the expensive self-join required in Question 3.
+
+2. diagnosis_count (INT)
+   - Logic: Count distinct diagnosis_ids for this encounter.
+   - Benefit: Allows filtering for "complex cases" (multi-diagnosis) without joining the bridge table.
+
+3. procedure_count (INT)
+   - Logic: Count distinct procedure_ids.
+   - Benefit: Quick complexity analysis.
+
+4. total_claim_amount & total_allowed_amount (DECIMAL)
+   - Logic: Store directly on the fact row.
+   - Benefit: Summing revenue becomes a single column aggregation, avoiding the join to the Billing table entirely.
+
+5. los_days (Length of Stay)
+   - Logic: DATEDIFF(discharge_date, encounter_date).
+   - Benefit: Ready-to-use metric for analysis.
+
+DECISION 4: BRIDGE TABLES
+
+Will we use bridge tables? YES.
+
+Justification:
+Healthcare data inherently contains Many-to-Many relationships.
+- A patient can have multiple diagnoses (e.g., Hypertension AND Diabetes) for one visit.
+- A patient can have multiple procedures (e.g., X-Ray AND EKG) for one visit.
+
+If we tried to force this into the Fact table (One row per encounter), we would have to create awkward columns like 'diagnosis_1', 'diagnosis_2', 'diagnosis_3', which breaks easily.
+Therefore, we will use:
+1. bridge_encounter_diagnoses (links fact_encounters to dim_diagnoses)
+2. bridge_encounter_procedures (links fact_encounters to dim_procedures)
+
+This allows accurate counting for Question 2 ("Top Diagnosis-Procedure Pairs") while keeping the main Fact table clean for revenue aggregation.
