@@ -1,0 +1,193 @@
+QUESTION 1: Monthly Encounters by Specialty
+
+SQL Query:
+SELECT 
+    DATE_FORMAT(e.encounter_date, '%Y-%m') AS encounter_month,
+    s.specialty_name,
+    e.encounter_type,
+    COUNT(e.encounter_id) AS total_encounters,
+    COUNT(DISTINCT e.patient_id) AS unique_patients
+FROM 
+    encounters e
+JOIN 
+    providers p ON e.provider_id = p.provider_id
+JOIN 
+    specialties s ON p.specialty_id = s.specialty_id
+GROUP BY 
+    DATE_FORMAT(e.encounter_date, '%Y-%m'),
+    s.specialty_name,
+    e.encounter_type
+ORDER BY 
+    encounter_month DESC, 
+    s.specialty_name;
+
+
+Schema Analysis:
+
+Tables joined: encounters, providers, specialties
+
+Number of joins: 2
+
+Performance:
+
+Execution time: 2.02 seconds
+
+Estimated rows scanned: 400,000
+
+Rows sent to client: 468
+
+Bottleneck Identified: The query performance is degraded by Full Table Scans and Temporary Tables.
+
+No Index Used: The statistics explicitly state "No Index used" and "Full table scans: 1". This means the engine had to read every single row in the encounters table (400,000 rows) because there is no index covering the combination of dates, providers, and specialties.
+
+Expensive Sorting: The "Sort merge passes: 8" indicates the result set was too large to sort in memory, forcing the database to write temporary data to disk (I/O heavy operation).
+
+Temporary Tables: The creation of "2 Temporary tables" confirms that the database had to materialize intermediate results to handle the JOINs before it could even begin the GROUP BY aggregation.
+
+
+___________________________________________________________________________________________________________________________________________________________
+
+QUESTION 2: Top Diagnosis-Procedure Pairs
+
+SQL Query:
+SELECT 
+    d.icd10_code,
+    p.cpt_code,
+    COUNT(e.encounter_id) AS combo_count
+FROM 
+    encounters e
+JOIN 
+    encounter_diagnoses ed ON e.encounter_id = ed.encounter_id
+JOIN 
+    diagnoses d ON ed.diagnosis_id = d.diagnosis_id
+JOIN 
+    encounter_procedures ep ON e.encounter_id = ep.encounter_id
+JOIN 
+    procedures p ON ep.procedure_id = p.procedure_id
+GROUP BY 
+    d.icd10_code, 
+    p.cpt_code
+ORDER BY 
+    combo_count DESC
+LIMIT 10;
+
+Schema Analysis:
+
+Tables joined: encounters, encounter_diagnoses, diagnoses, encounter_procedures, procedures
+
+Number of joins: 4
+
+Performance:
+
+Execution time: 2.50 seconds
+
+Estimated rows scanned: 499,876 (Rows Examined)
+
+Rows sent to client: 10
+
+Bottleneck Identified:
+
+Massive Data Read for Minimal Output: The ratio of "Rows Examined" (499,876) to "Rows Sent" (10) is terrible. The database had to calculate every possible combination of diagnoses and procedures across the entire history of the hospital just to find the top 10.
+
+The "Junction" Penalty: Because diagnoses and procedures live in separate junction tables (encounter_diagnoses and encounter_procedures), the database engine has to perform complex joins to link them.
+
+LIMIT is Deceptive: Even though you used LIMIT 10, the database still had to do 100% of the work (joining and grouping all 500k combinations) before it could sort them to find the top 10.
+
+___________________________________________________________________________________________________________________________________________________________
+
+QUESTION 3: 30-Day Readmission Rate
+
+SQL Query:
+SELECT 
+    s.specialty_name,
+    COUNT(DISTINCT e1.encounter_id) AS total_discharges,
+    COUNT(DISTINCT e2.encounter_id) AS readmissions,
+    (COUNT(DISTINCT e2.encounter_id) / COUNT(DISTINCT e1.encounter_id)) * 100 AS readmission_rate
+FROM 
+    encounters e1
+JOIN 
+    providers p ON e1.provider_id = p.provider_id
+JOIN 
+    specialties s ON p.specialty_id = s.specialty_id
+LEFT JOIN 
+    encounters e2 ON e1.patient_id = e2.patient_id 
+    AND e2.encounter_date > e1.discharge_date 
+    AND e2.encounter_date <= DATE_ADD(e1.discharge_date, INTERVAL 30 DAY)
+WHERE 
+    e1.encounter_type = 'Inpatient'
+GROUP BY 
+    s.specialty_name
+ORDER BY 
+    readmission_rate DESC;
+
+
+Schema Analysis:
+
+Tables joined: encounters (twice, self-join), providers, specialties
+
+Number of joins: 3 (but one is a complex self-join)
+
+Performance:
+
+Execution time: 1.98 seconds
+
+Estimated rows scanned: 264,969
+
+Rows sent to client: 12
+
+Bottleneck Identified:
+
+Self-Join on Ranges: The condition e2.encounter_date <= DATE_ADD(...) forces the database to perform a "Range Scan" rather than a simple key lookup. It cannot just find a match; it has to check a 30-day window for every single inpatient encounter.
+
+Temporary Table Explosion: The statistics show "Temporary tables created: 8". This is unusually high. It indicates that the database engine could not process the self-join and aggregation in memory and had to repeatedly write intermediate chunks of data to disk, killing performance.
+
+No Pre-computation: In a normalized schema, "Readmission" is a calculation derived at runtime. In a Star Schema, we could flag an encounter as is_readmission = 1 during the ETL process, turning this complex self-join into a simple SUM(is_readmission).
+
+
+
+___________________________________________________________________________________________________________________________________________________________
+
+QUESTION 4: Revenue by Specialty & Month
+
+SQL Query:
+
+SELECT 
+    s.specialty_name,
+    DATE_FORMAT(b.claim_date, '%Y-%m') AS billing_month,
+    SUM(b.allowed_amount) AS total_revenue
+FROM 
+    billing b
+JOIN 
+    encounters e ON b.encounter_id = e.encounter_id
+JOIN 
+    providers p ON e.provider_id = p.provider_id
+JOIN 
+    specialties s ON p.specialty_id = s.specialty_id
+GROUP BY 
+    s.specialty_name,
+    DATE_FORMAT(b.claim_date, '%Y-%m')
+ORDER BY 
+    total_revenue DESC;
+
+
+Schema Analysis:
+
+Tables joined: billing, encounters, providers, specialties
+
+Number of joins: 3
+
+Performance:
+
+Execution time: 2.15 seconds
+
+Estimated rows scanned: 400,012
+
+Rows sent to client: 12
+
+Bottleneck Identified:
+
+Long Join Chain for Aggregation: To slice revenue by specialty, the database must traverse from billing → encounters → providers → specialties. This dependency chain means we cannot calculate revenue without joining three other tables first.
+
+Full Scan on Large Table: The query performs a full scan on the encounters (or billing) table because there is no pre-calculated link between "Revenue" and "Specialty." It has to build this link row-by-row at runtime.
+
+Inefficient Aggregation: The engine processes 400,000+ records just to sum up numbers into 12 distinct groups. In a Star Schema, this total_revenue could be pre-aggregated or at least the specialty_key would be directly available in the fact table, removing 2 joins immediately.
