@@ -1,3 +1,7 @@
+Healthcare Analytics Lab: OLTP Performance Analysis
+Dataset Size: ~10,000 - 40,000 rows (Test Subset)
+
+
 QUESTION 1: Monthly Encounters by Specialty
 
 SQL Query:
@@ -21,31 +25,22 @@ ORDER BY
     encounter_month DESC, 
     s.specialty_name;
 
-
 Schema Analysis:
+- Tables joined: encounters, providers, specialties
+- Number of joins: 2
 
-Tables joined: encounters, providers, specialties
+Performance (Source: image_fed66e.png):
+- Execution time: 0.046 seconds
+- Estimated rows scanned: 40,000 (Rows Examined)
+- Rows sent to client: 468
+- Temporary Tables: 2 created
 
-Number of joins: 2
-
-Performance:
-
-Execution time: 2.02 seconds
-
-Estimated rows scanned: 400,000
-
-Rows sent to client: 468
-
-Bottleneck Identified: The query performance is degraded by Full Table Scans and Temporary Tables.
-
-No Index Used: The statistics explicitly state "No Index used" and "Full table scans: 1". This means the engine had to read every single row in the encounters table (400,000 rows) because there is no index covering the combination of dates, providers, and specialties.
-
-Expensive Sorting: The "Sort merge passes: 8" indicates the result set was too large to sort in memory, forcing the database to write temporary data to disk (I/O heavy operation).
-
-Temporary Tables: The creation of "2 Temporary tables" confirms that the database had to materialize intermediate results to handle the JOINs before it could even begin the GROUP BY aggregation.
+Bottleneck Identified:
+1. Full Table Scan: The query examined 40,000 rows to return only 468. Even with a small dataset, it touched 4x more rows than existed in the limit, likely due to the join multiplication before grouping.
+2. Temporary Tables: The engine had to create 2 temporary tables to handle the intermediate grouping results, adding overhead.
+3. No Index Used: The "Index Usage" explicitly states "No Index used," forcing a brute-force scan.
 
 
-___________________________________________________________________________________________________________________________________________________________
 
 QUESTION 2: Top Diagnosis-Procedure Pairs
 
@@ -72,28 +67,21 @@ ORDER BY
 LIMIT 10;
 
 Schema Analysis:
+- Tables joined: encounters, encounter_diagnoses, diagnoses, encounter_procedures, procedures
+- Number of joins: 4
 
-Tables joined: encounters, encounter_diagnoses, diagnoses, encounter_procedures, procedures
-
-Number of joins: 4
-
-Performance:
-
-Execution time: 2.50 seconds
-
-Estimated rows scanned: 499,876 (Rows Examined)
-
-Rows sent to client: 10
+Performance (Source: image_fedaa9.png):
+- Execution time: 0.094 seconds
+- Estimated rows scanned: 49,820 (Rows Examined)
+- Rows sent to client: 10
+- Temporary Tables: 1 created
 
 Bottleneck Identified:
+1. Cartesian Explosion (Row Explosion): The "Rows Examined" (49,820) is 5x higher than the total number of encounters (10,000). This proves that joining two many-to-many tables (diagnoses and procedures) creates a multiplicative effect, forcing the database to process significantly more data than exists in the base table.
+2. Inefficient Sorting: The database had to perform a "Sort with table scan" to group and order the results, requiring the creation of a temporary table.
+3. High IO / Low Value: We processed nearly 50,000 rows just to show the user 10 lines of text.
 
-Massive Data Read for Minimal Output: The ratio of "Rows Examined" (499,876) to "Rows Sent" (10) is terrible. The database had to calculate every possible combination of diagnoses and procedures across the entire history of the hospital just to find the top 10.
 
-The "Junction" Penalty: Because diagnoses and procedures live in separate junction tables (encounter_diagnoses and encounter_procedures), the database engine has to perform complex joins to link them.
-
-LIMIT is Deceptive: Even though you used LIMIT 10, the database still had to do 100% of the work (joining and grouping all 500k combinations) before it could sort them to find the top 10.
-
-___________________________________________________________________________________________________________________________________________________________
 
 QUESTION 3: 30-Day Readmission Rate
 
@@ -120,37 +108,26 @@ GROUP BY
 ORDER BY 
     readmission_rate DESC;
 
-
 Schema Analysis:
+- Tables joined: encounters (Self-Joined as e1 and e2), providers, specialties
+- Number of joins: 3 (Complex self-join involved)
 
-Tables joined: encounters (twice, self-join), providers, specialties
-
-Number of joins: 3 (but one is a complex self-join)
-
-Performance:
-
-Execution time: 1.98 seconds
-
-Estimated rows scanned: 264,969
-
-Rows sent to client: 12
+Performance (Source: image_fedb28.png):
+- Execution time: 0.047 seconds
+- Estimated rows scanned: 26,869 (Rows Examined)
+- Rows sent to client: 12
+- Temporary Tables: 8 created (!!)
 
 Bottleneck Identified:
-
-Self-Join on Ranges: The condition e2.encounter_date <= DATE_ADD(...) forces the database to perform a "Range Scan" rather than a simple key lookup. It cannot just find a match; it has to check a 30-day window for every single inpatient encounter.
-
-Temporary Table Explosion: The statistics show "Temporary tables created: 8". This is unusually high. It indicates that the database engine could not process the self-join and aggregation in memory and had to repeatedly write intermediate chunks of data to disk, killing performance.
-
-No Pre-computation: In a normalized schema, "Readmission" is a calculation derived at runtime. In a Star Schema, we could flag an encounter as is_readmission = 1 during the ETL process, turning this complex self-join into a simple SUM(is_readmission).
+1. Temporary Table Explosion: The statistics show "Temporary tables created: 8". This is excessively high. It indicates that the database engine could not resolve the complex self-join and aggregation steps in a single pass or in memory, forcing it to repeatedly write intermediate results to temporary storage.
+2. Inefficient Range Scan: The condition 'e2.encounter_date <= DATE_ADD(...)' prevents the use of a simple direct lookup (hash join). For every inpatient encounter, the database must scan a "window" of time in the table, resulting in 26,869 row examinations.
+3. No Index Usage: The "Index Usage" is marked as "No Index used," confirming that the query is performing full table scans.
 
 
-
-___________________________________________________________________________________________________________________________________________________________
 
 QUESTION 4: Revenue by Specialty & Month
 
 SQL Query:
-
 SELECT 
     s.specialty_name,
     DATE_FORMAT(b.claim_date, '%Y-%m') AS billing_month,
@@ -169,25 +146,17 @@ GROUP BY
 ORDER BY 
     total_revenue DESC;
 
-
 Schema Analysis:
+- Tables joined: billing, encounters, providers, specialties
+- Number of joins: 3
 
-Tables joined: billing, encounters, providers, specialties
-
-Number of joins: 3
-
-Performance:
-
-Execution time: 2.15 seconds
-
-Estimated rows scanned: 400,012
-
-Rows sent to client: 12
+Performance (Source: image_ff2cff.png):
+- Execution time: 0.125 seconds
+- Estimated rows scanned: 40,012 (Rows Examined)
+- Rows sent to client: 12
+- Temporary Tables: 1 created
 
 Bottleneck Identified:
-
-Long Join Chain for Aggregation: To slice revenue by specialty, the database must traverse from billing → encounters → providers → specialties. This dependency chain means we cannot calculate revenue without joining three other tables first.
-
-Full Scan on Large Table: The query performs a full scan on the encounters (or billing) table because there is no pre-calculated link between "Revenue" and "Specialty." It has to build this link row-by-row at runtime.
-
-Inefficient Aggregation: The engine processes 400,000+ records just to sum up numbers into 12 distinct groups. In a Star Schema, this total_revenue could be pre-aggregated or at least the specialty_key would be directly available in the fact table, removing 2 joins immediately.
+1. Long Join Chain: To aggregate revenue by specialty, the database must join across 4 tables (Billing -> Encounters -> Providers -> Specialties).
+2. Full Scan Overhead: "Rows Examined" is 40,012. The engine examined 4x the number of base rows (10,000) due to the join overhead before aggregation could occur.
+3. Slowest Query in Batch: At 0.125s, this was the slowest query in the batch (excluding the Q2 outliers), confirming that joining large transactional tables (Billing + Encounters) is computationally expensive.

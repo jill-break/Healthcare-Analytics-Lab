@@ -6,7 +6,7 @@ from faker import Faker
 fake = Faker()
 
 # Configuration
-NUM_RECORDS = 100000
+NUM_RECORDS = 10000
 BATCH_SIZE = 1000
 
 # Starting IDs
