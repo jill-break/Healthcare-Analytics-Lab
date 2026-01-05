@@ -3,12 +3,12 @@
 ## 1. The Scale Challenge: 100,000 vs. 10,000 Rows
 **"The Wall of Complexity"**
 
-Initially, this project attempted to load and analyze a dataset of **100,000+ encounters**. This attempt failed catastrophically, revealing the hard limits of the OLTP design for analytical workloads.
+Initially, I attempted to load and analyze a dataset of **100,000+ encounters**. This attempt failed catastrophically, revealing the hard limits of the OLTP design for analytical workloads.
 
 * **ETL Failure:** The initial load script ran for over **45 minutes** before timing out (Error Code: 2013). The database could not handle the complex readmission logic (checking 30-day windows for 100k patients) in a single transaction.
 * **Query Failure:** Analytical queries on the large dataset froze the client, consuming excessive memory to generate temporary tables for joins.
 
-**Decision:** To complete the lab analysis, we were forced to downsample the dataset to **10,000 rows**. This downsampling was the only way to get the OLTP queries to finish, proving that the normalized structure is **functionally broken** for large-scale analytics.
+**Decision:** To complete the lab analysis, I was forced to downsample the dataset to **10,000 rows**. This downsampling was the only way to get the OLTP queries to finish, proving that the normalized structure is **functionally broken** for large-scale analytics.
 
 ---
 
@@ -23,7 +23,7 @@ In the Star Schema (`olap_healthtech`), we denormalized this hierarchy. The reve
 ### B. Pre-Computation (The "Readmission" Logic)
 The most significant speedup came from moving calculation **out of runtime** and **into the ETL pipeline**.
 * **OLTP:** Calculated readmission "on the fly" by self-joining the table to look up past visits. This is an $O(n^2)$ complexity operation.
-* **OLAP:** We calculated the `is_readmission` flag once during the nightly load and stored it as a static `1` or `0`.
+* **OLAP:** I calculated the `is_readmission` flag once during the nightly load and stored it as a static `1` or `0`.
 * **Result:** The runtime query became a simple `SUM(is_readmission)`, eliminating the need for temporary tables entirely.
 
 ---
@@ -44,7 +44,7 @@ The most significant speedup came from moving calculation **out of runtime** and
 
 ## 4. Bridge Tables: Worth It?
 
-We decided to keep **Diagnoses** and **Procedures** in "Bridge Tables" (`bridge_encounter_diagnoses`) rather than denormalizing them into the Fact table.
+I decided to keep **Diagnoses** and **Procedures** in "Bridge Tables" (`bridge_encounter_diagnoses`) rather than denormalizing them into the Fact table.
 
 * **Why?** Healthcare data is inherently "Many-to-Many." A single patient visit can have 5 diagnoses and 3 procedures. Flattening this into the Fact table would require creating multiple rows for one visit, which would duplicate the `claim_amount` and ruin our revenue metrics ("Fan Trap").
 * **The Trade-off:** While this maintained data accuracy, it **hurt performance**. Query 2 (Top Diagnoses) was actually *slower* in the Star Schema because it still required joining the Fact table to the Bridge tables.

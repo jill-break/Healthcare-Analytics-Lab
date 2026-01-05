@@ -1,7 +1,6 @@
 Design Decisions Document
 Project: Healthcare Analytics - OLTP to Star Schema Migration
 Target Database: olap_healthtech
-Author: Junior Data Engineer
 
 
 DECISION 1: FACT TABLE GRAIN
@@ -19,7 +18,7 @@ which aligns perfectly with the encounter grain.
 
 DECISION 2: DIMENSION TABLES
 
-We will create 8 dimension tables in the 'olap_healthtech' database to support filtering and grouping:
+I will create 8 dimension tables in the 'olap_healthtech' database to support filtering and grouping:
 
 1. dim_date
    - Attributes: date_key (PK), full_date, year, quarter, month, day_name, is_weekend.
@@ -27,7 +26,7 @@ We will create 8 dimension tables in the 'olap_healthtech' database to support f
 
 2. dim_patient
    - Attributes: patient_key (PK), patient_id, current_age, age_group ('0-18', '19-65', '65+').
-   - Purpose: Demographics analysis. We calculate 'age_group' during ETL to avoid runtime case 
+   - Purpose: Demographics analysis. I calculate 'age_group' during ETL to avoid runtime case 
    statements.
 
 3. dim_provider
@@ -76,16 +75,16 @@ process to eliminate expensive runtime joins:
 
 DECISION 4: BRIDGE TABLES
 
-Will we use bridge tables? YES.
+Will I use bridge tables? YES.
 
 Justification:
 Healthcare data contains inherent Many-to-Many relationships:
 - One Encounter -> Many Diagnoses
 - One Encounter -> Many Procedures
 
-We implemented two bridge tables in 'olap_healthtech':
+I implemented two bridge tables in 'olap_healthtech':
 1. bridge_encounter_diagnoses
 2. bridge_encounter_procedures
 
-This allows us to handle the "Top Diagnosis-Procedure Pairs" query (Question 2) 
+This allows me to handle the "Top Diagnosis-Procedure Pairs" query (Question 2) 
 accurately without polluting the main Fact table grain.

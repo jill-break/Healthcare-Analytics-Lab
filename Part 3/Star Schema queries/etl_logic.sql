@@ -3,8 +3,6 @@
 -- Target DB: olap_healthtech
 
 -- 0. HELPER: Create Index on Source for Speed
--- If this fails with "Duplicate Key", just ignore it and continue.
--- We removed 'IF NOT EXISTS' to fix your Error 1064.
 CREATE INDEX idx_etl_speed 
 ON oltp_healthtech.encounters(patient_id, encounter_date, encounter_type);
 
