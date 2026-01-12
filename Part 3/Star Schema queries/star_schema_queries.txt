@@ -19,7 +19,7 @@ ORDER BY d.year DESC, d.month DESC, s.specialty_name;
 
 Performance Comparison:
 - OLTP Time: 0.046s
-- OLAP Time: 0.141s (Source: image_ffb880.png)
+- OLAP Time: 0.141s 
 - Result: Slower
 
 Analysis:
@@ -44,7 +44,7 @@ LIMIT 10;
 
 Performance Comparison:
 - OLTP Time: 0.094s
-- OLAP Time: 0.219s (Source: image_ffbb6d.png)
+- OLAP Time: 0.219s 
 - Result: Slower
 
 Analysis:
@@ -69,7 +69,7 @@ ORDER BY readmission_rate DESC;
 
 Performance Comparison:
 - OLTP Time: 0.047s (with 8 temporary tables!)
-- OLAP Time: 0.016s (Source: image_002920.png)
+- OLAP Time: 0.016s 
 - Result: 300% Faster (3x Speedup)
 
 Analysis:
@@ -92,8 +92,11 @@ ORDER BY total_revenue DESC;
 
 Performance Comparison:
 - OLTP Time: 0.125s
-- OLAP Time: 0.063s (Source: image_002c85.png)
+- OLAP Time: 0.063s 
 - Result: 200% Faster (2x Speedup)
 
 Analysis:
-I achieved a 2x speedup by Denormalization. In the OLTP system, revenue data lived in a separate 'billing' table, forcing a massive join between Encounters and Billing. In the Star Schema, I moved 'total_allowed_amount' directly into the 'fact_encounters' table. This allowed me to calculate revenue without touching the billing table at all.
+I achieved a 2x speedup by Denormalization. In the OLTP system, revenue data lived 
+in a separate 'billing' table, forcing a massive join between Encounters and Billing. 
+In the Star Schema, I moved 'total_allowed_amount' directly into the 'fact_encounters' table. 
+This allowed me to calculate revenue without touching the billing table at all.

@@ -76,9 +76,13 @@ SPECIALTIES_LIST = [
 # --- HELPER FUNCTIONS ---
 
 def escape_sql(text):
+    """
+    Escapes single quotes in text for SQL insertion.
+    """
     return str(text).replace("'", "''")
 
 def batch_write(filename, table_name, data_generator_func):
+    """Writes batched INSERT statements to a file."""
     print(f"Generating {filename}...")
     with open(filename, 'w') as f:
         buffer = []
@@ -105,6 +109,7 @@ def batch_write(filename, table_name, data_generator_func):
 # --- GENERATORS ---
 
 def gen_specialty(i):
+    """Generates a specialty record."""
     # IDs: 1 to 10000
     pk = ID_OFFSETS['specialties'] + i
     # Randomly pick a realistic specialty
@@ -112,6 +117,9 @@ def gen_specialty(i):
     return (pk, name, code)
 
 def gen_department(i):
+    """
+    Generates a department record.
+    """
     # IDs: 1 to 10000
     pk = ID_OFFSETS['departments'] + i
     # Randomly pick a realistic department name
@@ -121,6 +129,7 @@ def gen_department(i):
     return (pk, dept_name, floor, capacity)
 
 def gen_diagnosis(i):
+    """Generates a diagnosis record."""
     # IDs: 3001 to 13000
     pk = ID_OFFSETS['diagnoses'] + i
     # Randomly pick a realistic ICD code/desc
@@ -128,6 +137,7 @@ def gen_diagnosis(i):
     return (pk, code, name)
 
 def gen_procedure(i):
+    """Generates a procedure record."""
     # IDs: 4001 to 14000
     pk = ID_OFFSETS['procedures'] + i
     # Randomly pick a realistic CPT code/desc
@@ -137,6 +147,7 @@ def gen_procedure(i):
 # --- STANDARD GENERATORS (Remaining same logic) ---
 
 def gen_provider(i):
+    """Generates a provider record."""
     pk = ID_OFFSETS['providers'] + i
     first = fake.first_name()
     last = fake.last_name()
@@ -146,6 +157,7 @@ def gen_provider(i):
     return (pk, first, last, title, dept_id, spec_id)
 
 def gen_patient(i):
+    """Generates a patient record."""
     pk = ID_OFFSETS['patients'] + i
     first = fake.first_name()
     last = fake.last_name()
@@ -155,6 +167,7 @@ def gen_patient(i):
     return (pk, first, last, dob, gender, mrn)
 
 def gen_encounter(i):
+    """Generates an encounter record."""
     pk = ID_OFFSETS['encounters'] + i
     pat_id = random.randint(ID_OFFSETS['patients'], ID_OFFSETS['patients'] + NUM_RECORDS - 1)
     prov_id = random.randint(ID_OFFSETS['providers'], ID_OFFSETS['providers'] + NUM_RECORDS - 1)
@@ -165,6 +178,7 @@ def gen_encounter(i):
     return (pk, pat_id, prov_id, enc_type, start_date, end_date, dept_id)
 
 def gen_billing(i):
+    """Generates a billing record."""
     pk = ID_OFFSETS['billing'] + i
     enc_id = ID_OFFSETS['encounters'] + i
     total = random.randint(100, 50000)
@@ -174,6 +188,7 @@ def gen_billing(i):
     return (pk, enc_id, total, covered, bill_date, status)
 
 def gen_enc_diagnosis(i):
+    """Generates an encounter diagnosis record."""
     pk = ID_OFFSETS['encounter_diagnoses'] + i
     enc_id = random.randint(ID_OFFSETS['encounters'], ID_OFFSETS['encounters'] + NUM_RECORDS - 1)
     diag_id = random.randint(ID_OFFSETS['diagnoses'], ID_OFFSETS['diagnoses'] + NUM_RECORDS - 1)
@@ -181,6 +196,7 @@ def gen_enc_diagnosis(i):
     return (pk, enc_id, diag_id, rank)
 
 def gen_enc_procedure(i):
+    """Generates an encounter procedure record."""
     pk = ID_OFFSETS['encounter_procedures'] + i
     enc_id = random.randint(ID_OFFSETS['encounters'], ID_OFFSETS['encounters'] + NUM_RECORDS - 1)
     proc_id = random.randint(ID_OFFSETS['procedures'], ID_OFFSETS['procedures'] + NUM_RECORDS - 1)
