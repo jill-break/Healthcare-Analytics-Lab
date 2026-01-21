@@ -6,14 +6,14 @@ Strategy: Staged ELT (Extract, Load, Transform)
 
 1. HIGH-LEVEL STRATEGY
 The migration follows a "Staged Loading" approach to handle performance bottlenecks found during the initial 100k row test. 
-Instead of a single monolithic query (which timed out), we split the process into:
+Instead of a single monolithic query (which timed out), I split the process into:
 1.  Dimension Load: Direct inserts with row-level transformations.
 2.  Fact Load (Stage A): Pre-calculate expensive counts into temporary tables.
 3.  Fact Load (Stage B): Bulk insert base data (fast).
 4.  Fact Load (Stage C): Update complex logic (Readmission) in a second pass.
 
 2. DIMENSION LOGIC (Pseudocode)
-For each dimension, we extract from Source and Load to Target with necessary transformations.
+For each dimension, I extract from Source and Load to Target with necessary transformations.
 
 DIM_PATIENT:
     SELECT patient_id, dob, gender FROM source.patients
@@ -35,7 +35,7 @@ DIM_SPECIALTY, DIM_DEPARTMENT, DIM_PROVIDER:
 
 3. FACT TABLE LOGIC (The "Staged" Optimization)
 The Fact table failed to load when using subqueries for counts and readmissions simultaneously. 
-We fixed this using the following 3-Stage Logic:
+I fixed this using the following 3-Stage Logic:
 
 STAGE A: Pre-Aggregation (Helper Tables)
     -- Problem: Running `COUNT(*)` for every encounter inside the main INSERT caused timeouts.
@@ -74,7 +74,7 @@ STAGE C: The "Readmission" Update
     ENABLE SQL_SAFE_UPDATES
 
 4. BRIDGE TABLE LOGIC
-We populate bridge tables only for the encounters that successfully made it into the Fact table (handling the 10k limit).
+I populate bridge tables only for the encounters that successfully made it into the Fact table (handling the 10k limit).
 
 BRIDGE_DIAGNOSES:
     JOIN source.encounter_diagnoses 
