@@ -29,7 +29,7 @@ Schema Analysis:
 - Tables joined: encounters, providers, specialties
 - Number of joins: 2
 
-Performance (Source: Question 1.png):
+Performance (Source: Query analysis Screenshots/Question 1.png):
 - Execution time: 0.046 seconds
 - Estimated rows scanned: 40,000 (Rows Examined)
 - Rows sent to client: 468
@@ -70,7 +70,7 @@ Schema Analysis:
 - Tables joined: encounters, encounter_diagnoses, diagnoses, encounter_procedures, procedures
 - Number of joins: 4
 
-Performance (Source: Question 2.png):
+Performance (Source: Query analysis Screenshots/Question 2.png):
 - Execution time: 0.094 seconds
 - Estimated rows scanned: 49,820 (Rows Examined)
 - Rows sent to client: 10
@@ -112,7 +112,7 @@ Schema Analysis:
 - Tables joined: encounters (Self-Joined as e1 and e2), providers, specialties
 - Number of joins: 3 (Complex self-join involved)
 
-Performance (Source: Question 3.png):
+Performance (Source: Query analysis Screenshots/Question 3.png):
 - Execution time: 0.047 seconds
 - Estimated rows scanned: 26,869 (Rows Examined)
 - Rows sent to client: 12
@@ -150,7 +150,7 @@ Schema Analysis:
 - Tables joined: billing, encounters, providers, specialties
 - Number of joins: 3
 
-Performance (Source: Question 4.png):
+Performance (Source: Query analysis Screenshots/Question 4.png):
 - Execution time: 0.125 seconds
 - Estimated rows scanned: 40,012 (Rows Examined)
 - Rows sent to client: 12
